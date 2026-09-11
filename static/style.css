@@ -1,0 +1,112 @@
+/* ==========================================================
+   DASHBOARD SUMMARY CARDS
+   ========================================================== */
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 15px;
+    margin-bottom: 24px;
+}
+
+/* First row: Total Stocks + Account Role */
+.summary-card:nth-child(1),
+.summary-card:nth-child(2) {
+    grid-column: span 3;
+}
+
+/* Second row: Borrowed + Pending Borrow + Pending Returns */
+.summary-card:nth-child(3),
+.summary-card:nth-child(4),
+.summary-card:nth-child(5) {
+    grid-column: span 2;
+}
+
+.summary-card {
+    background: white;
+    border: 1px solid #d8e0ea;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.06);
+}
+
+.summary-card .label {
+    color: #607080;
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.summary-card .value {
+    display: inline-block;
+    background: #e8eff7;
+    color: #173b67;
+    border-radius: 6px;
+    padding: 8px 18px;
+    min-width: 55px;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.table-wrapper {
+    margin-top: 15px;
+}
+
+/* ==========================================================
+   FILTER ACTION BUTTONS
+   ========================================================== */
+
+.actions {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.actions button,
+.actions .button {
+    height: 40px;
+    box-sizing: border-box;
+}
+
+
+/* ==========================================================
+   RESPONSIVE DESIGN
+   ========================================================== */
+
+@media (max-width: 700px) {
+
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .summary-card:nth-child(1),
+    .summary-card:nth-child(2),
+    .summary-card:nth-child(3),
+    .summary-card:nth-child(4),
+    .summary-card:nth-child(5) {
+        grid-column: span 1;
+    }
+}
+
+/* show password style */
+
+.show-password {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.show-password input {
+    width: auto;
+    margin: 0;
+}
+
+.form-actions {
+    margin-top: 18px;
+}

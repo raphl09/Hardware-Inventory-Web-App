@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <section class="card">
+        <h2>Account Login</h2>
+
+        <p class="muted">
+            Enter your laboratory system credentials.
+        </p>
+
+        <form method="POST" action="{{ url_for('login') }}">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    required
+                    autocomplete="username"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    required
+                    autocomplete="current-password"
+                >
+                <label class="show-password">
+                    <input
+                        type="checkbox"
+                        onclick="togglePassword('password')"
+                    >
+                    Show Password
+                </label>
+            </div>
+
+            <button type="submit">Log In</button>
+        </form>
+
+        <hr>
+
+        <p>
+            No account?
+            <a href="{{ url_for('register') }}">Register here</a>
+        </p>
+
+        <p>
+            Locked account?
+            <a href="{{ url_for('reset_request') }}">
+                Request password reset
+            </a>
+        </p>
+    </section>
+</div>
+{% endblock %}

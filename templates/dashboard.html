@@ -1,0 +1,1674 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<div class="container">
+
+    <!-- CURRENT DASHBOARD REQUIREMENTS -->
+
+    <section class="summary-grid">
+
+        <div class="summary-card">
+            <div class="label">Total Stocks</div>
+            <div class="value">{{ total_stocks }}</div>
+        </div>
+
+        <div class="summary-card">
+            <div class="label">Account Role</div>
+            <div class="value">{{ session.get("role") }}</div>
+        </div>
+
+        <div class="summary-card">
+            <div class="label">
+                {% if session.get("role") == "USER" %}
+                    My Borrowed Items
+                {% else %}
+                    Borrowed Items
+                {% endif %}
+            </div>
+
+            <div class="value">{{ active_loans|length }}</div>
+        </div>
+
+        <div class="summary-card">
+            <div class="label">Pending Borrow Requests</div>
+
+            <div class="value">
+                {% if session.get("role") == "ADMIN" %}
+                    {{ pending_borrows|length }}
+                {% else %}
+                    {{ pending_borrow_requests|length }}
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="summary-card">
+            <div class="label">Pending Returns</div>
+            <div class="value">{{ pending_returns|length }}</div>
+        </div>
+
+    </section>
+
+
+    <!-- SEARCH AND FILTER -->
+
+    <section class="card">
+
+        <h2>Hardware Inventory</h2>
+
+        <form method="GET" action="{{ url_for('dashboard') }}">
+
+            <div class="form-grid">
+
+                <div>
+                    <label for="search">Search</label>
+
+                    <input
+                        type="text"
+                        id="search"
+                        name="search"
+                        value="{{ search }}"
+                        placeholder="Item name or category"
+                    >
+                </div>
+
+
+                <div>
+                    <label for="category">Category</label>
+
+                    <select id="category" name="category">
+
+                        <option value="All Categories">
+                            All Categories
+                        </option>
+
+                        {% for category in categories %}
+
+                            <option
+                                value="{{ category }}"
+                                {% if selected_category == category %}
+                                    selected
+                                {% endif %}
+                            >
+                                {{ category }}
+                            </option>
+
+                        {% endfor %}
+
+                    </select>
+                </div>
+
+
+                <div>
+                    <label for="status">Stock Status</label>
+
+                    <select id="status" name="status">
+
+                        {% for stock_status in [
+                            "All Statuses",
+                            "In Stock",
+                            "Low Stock",
+                            "Out of Stock"
+                        ] %}
+
+                            <option
+                                value="{{ stock_status }}"
+                                {% if selected_status == stock_status %}
+                                    selected
+                                {% endif %}
+                            >
+                                {{ stock_status }}
+                            </option>
+
+                        {% endfor %}
+
+                    </select>
+                </div>
+
+
+                <div class="actions">
+
+                    <button type="submit">
+                        Apply Filter
+                    </button>
+
+                    <a
+                        class="button button-secondary"
+                        href="{{ url_for('dashboard') }}"
+                    >
+                        Clear
+                    </a>
+
+                </div>
+
+            </div>
+
+        </form>
+
+
+        <div class="table-wrapper">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+                        <th>ID</th>
+                        <th>Item</th>
+                        <th>Category</th>
+                        <th>Quantity</th>
+
+                        {% if session.get("role") == "ADMIN" %}
+                            <th>Unit Price</th>
+                        {% endif %}
+
+                        <th>Status</th>
+                    </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                    {% for item in items %}
+
+                        <tr>
+
+                            <td>{{ item[0] }}</td>
+
+                            <td>{{ item[1] }}</td>
+
+                            <td>{{ item[2] }}</td>
+
+                            <td>{{ item[3] }}</td>
+
+                            {% if session.get("role") == "ADMIN" %}
+
+                                <td>
+                                    ₱{{ "%.2f"|format(item[4]) }}
+                                </td>
+
+                            {% endif %}
+
+                            <td>
+                                <span class="status">
+                                    {{ item[5] }}
+                                </span>
+                            </td>
+
+                        </tr>
+
+                    {% else %}
+
+                        <tr>
+
+                            <td colspan="6">
+                                No hardware records found.
+                            </td>
+
+                        </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </section>
+
+
+    {% if session.get("role") == "USER" %}
+
+        <!-- ======================================================
+             USER EQUIPMENT REQUEST
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Request Equipment</h2>
+
+            <form
+                method="POST"
+                action="{{ url_for('borrow') }}"
+            >
+
+                <div class="form-grid">
+
+                    <div>
+
+                        <label for="item_id">
+                            Equipment
+                        </label>
+
+                        <select
+                            id="item_id"
+                            name="item_id"
+                            required
+                        >
+
+                            <option value="">
+                                Select equipment
+                            </option>
+
+                            {% for item in equipment_options %}
+
+                                <option
+                                    value="{{ item[0] }}"
+                                    data-stock="{{ item[2] }}"
+                                >
+                                    {{ item[1] }} —
+                                    {{ item[2] }} available
+                                </option>
+
+                            {% endfor %}
+
+                        </select>
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="quantity">
+                            Quantity
+                        </label>
+
+                        <input
+                            type="number"
+                            id="quantity"
+                            name="quantity"
+                            min="1"
+                            value="1"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="borrower_id_number">
+                            Borrower ID Number
+                        </label>
+
+                        <input
+                            type="text"
+                            id="borrower_id_number"
+                            name="borrower_id_number"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="group_members">
+                            Group Members
+                        </label>
+
+                        <input
+                            type="text"
+                            id="group_members"
+                            name="group_members"
+                            value="None"
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="start_time">
+                            Start Date and Time
+                        </label>
+
+                        <input
+                            type="datetime-local"
+                            id="start_time"
+                            name="start_time"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="end_time">
+                            End Date and Time
+                        </label>
+
+                        <input
+                            type="datetime-local"
+                            id="end_time"
+                            name="end_time"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="full-width">
+
+                        <label for="purpose">
+                            Purpose
+                        </label>
+
+                        <textarea
+                            id="purpose"
+                            name="purpose"
+                            required
+                        ></textarea>
+
+                    </div>
+
+                </div>
+
+
+                <button type="submit">
+                    Submit Request
+                </button>
+
+            </form>
+
+        </section>
+
+
+        <!-- ======================================================
+             USER PENDING REQUESTS
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Pending Borrow Requests</h2>
+
+            <div class="table-wrapper">
+
+                <table>
+
+                    <thead>
+
+                        <tr>
+                            <th>Request</th>
+                            <th>Equipment</th>
+                            <th>Quantity</th>
+                            <th>Schedule</th>
+                            <th>Purpose</th>
+                            <th>Action</th>
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        {% for loan in pending_borrow_requests %}
+
+                            <tr>
+
+                                <td>
+                                    #{{ loan[0] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[4] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[5] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[7] }}<br>
+                                    to {{ loan[8] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[6] }}
+                                </td>
+
+                                <td>
+
+                                    <form
+                                        method="POST"
+                                        action="{{ url_for('cancel_request') }}"
+                                    >
+
+                                        <input
+                                            type="hidden"
+                                            name="request_id"
+                                            value="{{ loan[0] }}"
+                                        >
+
+                                        <button
+                                            class="button-danger"
+                                            type="submit"
+                                        >
+                                            Cancel
+                                        </button>
+
+                                    </form>
+
+                                </td>
+
+                            </tr>
+
+                        {% else %}
+
+                            <tr>
+
+                                <td colspan="6">
+                                    No pending borrow requests.
+                                </td>
+
+                            </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+
+        <!-- ======================================================
+             USER BORROWED ITEMS
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>My Borrowed Items</h2>
+
+            <form
+                method="POST"
+                action="{{ url_for('return_request') }}"
+            >
+
+                <div class="table-wrapper">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+                                <th>Select</th>
+                                <th>Request</th>
+                                <th>Equipment</th>
+                                <th>Quantity</th>
+                                <th>Schedule</th>
+                                <th>Status</th>
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            {% for loan in active_loans %}
+
+                                <tr>
+
+                                    <td>
+
+                                        <input
+                                            type="checkbox"
+                                            name="loan_ids"
+                                            value="{{ loan[0] }}"
+                                        >
+
+                                    </td>
+
+                                    <td>
+                                        #{{ loan[0] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[4] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[5] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[7] }}<br>
+                                        to {{ loan[8] }}
+                                    </td>
+
+                                    <td>
+
+                                        <span class="status">
+                                            {{ loan[9] }}
+                                        </span>
+
+                                    </td>
+
+                                </tr>
+
+                            {% else %}
+
+                                <tr>
+
+                                    <td colspan="6">
+                                        You do not have borrowed items.
+                                    </td>
+
+                                </tr>
+
+                            {% endfor %}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+
+                {% if active_loans %}
+
+                    <button type="submit">
+                        Request Selected Returns
+                    </button>
+
+                {% endif %}
+
+            </form>
+
+        </section>
+
+
+        <!-- ======================================================
+             USER PENDING RETURNS
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Pending Returns</h2>
+
+            <div class="table-wrapper">
+
+                <table>
+
+                    <thead>
+
+                        <tr>
+                            <th>Request</th>
+                            <th>Equipment</th>
+                            <th>Quantity</th>
+                            <th>Status</th>
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        {% for loan in pending_returns %}
+
+                            <tr>
+
+                                <td>
+                                    #{{ loan[0] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[4] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[5] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[9] }}
+                                </td>
+
+                            </tr>
+
+                        {% else %}
+
+                            <tr>
+
+                                <td colspan="4">
+                                    No pending return information.
+                                </td>
+
+                            </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+
+        <!-- ======================================================
+             USER HISTORY
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Borrow Audit</h2>
+
+            <div class="table-wrapper">
+
+                <table>
+
+                    <thead>
+
+                        <tr>
+                            <th>Request</th>
+                            <th>Equipment</th>
+                            <th>Quantity</th>
+                            <th>Purpose</th>
+                            <th>Status</th>
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        {% for loan in history %}
+
+                            <tr>
+
+                                <td>
+                                    #{{ loan[0] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[4] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[5] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[6] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[9] }}
+                                </td>
+
+                            </tr>
+
+                        {% else %}
+
+                            <tr>
+
+                                <td colspan="5">
+                                    No completed borrowing history.
+                                </td>
+
+                            </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+
+    {% else %}
+
+        <!-- ======================================================
+             ADMIN ADD HARDWARE
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Add Hardware</h2>
+
+            <form
+                method="POST"
+                action="{{ url_for('admin_add') }}"
+            >
+
+                <div class="form-grid">
+
+                    <div>
+
+                        <label for="item_name">
+                            Item Name
+                        </label>
+
+                        <input
+                            type="text"
+                            id="item_name"
+                            name="item_name"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="category">
+                            Category
+                        </label>
+
+                        <input
+                            type="text"
+                            id="category"
+                            name="category"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="quantity">
+                            Quantity
+                        </label>
+
+                        <input
+                            type="number"
+                            id="quantity"
+                            name="quantity"
+                            min="0"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="unit_price">
+                            Unit Price
+                        </label>
+
+                        <input
+                            type="number"
+                            id="unit_price"
+                            name="unit_price"
+                            min="0"
+                            step="0.01"
+                            required
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <div class="form-actions">
+
+                    <button type="submit">
+                        Add Hardware
+                    </button>
+
+                </div>
+
+            </form>
+
+        </section>
+
+
+        <!-- ======================================================
+             ADMIN UPDATE HARDWARE
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Update Hardware</h2>
+
+            <p class="muted">
+                Select a hardware item and update its quantity
+                and unit price.
+            </p>
+
+
+            <form
+                method="POST"
+                action="{{ url_for('admin_update') }}"
+            >
+
+                <div class="form-grid">
+
+                    <div class="full-width">
+
+                        <label for="update_item_id">
+                            Hardware Item
+                        </label>
+
+                        <select
+                            id="update_item_id"
+                            name="item_id"
+                            required
+                        >
+
+                            <option value="">
+                                Select hardware
+                            </option>
+
+                            {% for item in items %}
+
+                                <option value="{{ item[0] }}">
+                                    #{{ item[0] }} —
+                                    {{ item[1] }}
+                                    ({{ item[2] }})
+                                    — Current Stock: {{ item[3] }}
+                                    — ₱{{ "%.2f"|format(item[4]) }}
+                                </option>
+
+                            {% endfor %}
+
+                        </select>
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="update_quantity">
+                            New Quantity
+                        </label>
+
+                        <input
+                            type="number"
+                            id="update_quantity"
+                            name="quantity"
+                            min="0"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label for="update_unit_price">
+                            New Unit Price
+                        </label>
+
+                        <input
+                            type="number"
+                            id="update_unit_price"
+                            name="unit_price"
+                            min="0"
+                            step="0.01"
+                            required
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <div class="form-actions">
+
+                    <button
+                        type="submit"
+                        class="button-warning"
+                    >
+                        Update Hardware
+                    </button>
+
+                </div>
+
+            </form>
+
+        </section>
+
+
+        <!-- ======================================================
+             ADMIN DELETE HARDWARE
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Delete Hardware</h2>
+
+            <p class="muted">
+                Select one or more hardware items to permanently
+                remove them from the inventory.
+            </p>
+
+
+            <form
+                method="POST"
+                action="{{ url_for('admin_delete') }}"
+                onsubmit="return confirmDeleteHardware();"
+            >
+
+                <div class="table-wrapper">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+                                <th>Select</th>
+                                <th>ID</th>
+                                <th>Item</th>
+                                <th>Category</th>
+                                <th>Quantity</th>
+                                <th>Unit Price</th>
+                                <th>Status</th>
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            {% for item in items %}
+
+                                <tr>
+
+                                    <td>
+
+                                        <input
+                                            type="checkbox"
+                                            name="item_ids"
+                                            value="{{ item[0] }}"
+                                        >
+
+                                    </td>
+
+                                    <td>
+                                        {{ item[0] }}
+                                    </td>
+
+                                    <td>
+                                        {{ item[1] }}
+                                    </td>
+
+                                    <td>
+                                        {{ item[2] }}
+                                    </td>
+
+                                    <td>
+                                        {{ item[3] }}
+                                    </td>
+
+                                    <td>
+                                        ₱{{ "%.2f"|format(item[4]) }}
+                                    </td>
+
+                                    <td>
+
+                                        <span class="status">
+                                            {{ item[5] }}
+                                        </span>
+
+                                    </td>
+
+                                </tr>
+
+                            {% else %}
+
+                                <tr>
+
+                                    <td colspan="7">
+                                        No hardware records found.
+                                    </td>
+
+                                </tr>
+
+                            {% endfor %}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+
+                {% if items %}
+
+                    <div class="form-actions">
+
+                        <button
+                            type="submit"
+                            class="button-danger"
+                        >
+                            Delete Selected Hardware
+                        </button>
+
+                    </div>
+
+                {% endif %}
+
+            </form>
+
+        </section>
+
+
+        <!-- ======================================================
+             ADMIN BORROW APPROVAL
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Pending Borrow Requests</h2>
+
+            <form
+                method="POST"
+                action="{{ url_for('admin_borrow_action') }}"
+            >
+
+                <div class="table-wrapper">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+                                <th>Select</th>
+                                <th>User</th>
+                                <th>ID Number</th>
+                                <th>Equipment</th>
+                                <th>Quantity</th>
+                                <th>Schedule</th>
+                                <th>Purpose</th>
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            {% for loan in pending_borrows %}
+
+                                <tr>
+
+                                    <td>
+
+                                        <input
+                                            type="checkbox"
+                                            name="loan_ids"
+                                            value="{{ loan[0] }}"
+                                        >
+
+                                    </td>
+
+                                    <td>
+                                        {{ loan[1] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[2] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[4] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[5] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[7] }}<br>
+                                        to {{ loan[8] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[6] }}
+                                    </td>
+
+                                </tr>
+
+                            {% else %}
+
+                                <tr>
+
+                                    <td colspan="7">
+                                        No pending borrow requests.
+                                    </td>
+
+                                </tr>
+
+                            {% endfor %}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+
+                {% if pending_borrows %}
+
+                    <div class="form-group">
+
+                        <label for="admin_note">
+                            Admin Note
+                        </label>
+
+                        <input
+                            type="text"
+                            id="admin_note"
+                            name="admin_note"
+                        >
+
+                    </div>
+
+
+                    <div class="actions">
+
+                        <button
+                            class="button-success"
+                            type="submit"
+                            name="action"
+                            value="approve"
+                        >
+                            Approve
+                        </button>
+
+
+                        <button
+                            class="button-danger"
+                            type="submit"
+                            name="action"
+                            value="reject"
+                        >
+                            Reject
+                        </button>
+
+                    </div>
+
+                {% endif %}
+
+            </form>
+
+        </section>
+
+
+        <!-- ======================================================
+             ADMIN RETURN APPROVAL
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Pending Returns — Admin Approval Panel</h2>
+
+            <form
+                method="POST"
+                action="{{ url_for('admin_return_action') }}"
+            >
+
+                <div class="table-wrapper">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+                                <th>Select</th>
+                                <th>User</th>
+                                <th>Equipment</th>
+                                <th>Quantity</th>
+                                <th>Schedule</th>
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            {% for loan in pending_returns %}
+
+                                <tr>
+
+                                    <td>
+
+                                        <input
+                                            type="checkbox"
+                                            name="loan_ids"
+                                            value="{{ loan[0] }}"
+                                        >
+
+                                    </td>
+
+                                    <td>
+                                        {{ loan[1] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[4] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[5] }}
+                                    </td>
+
+                                    <td>
+                                        {{ loan[7] }} to {{ loan[8] }}
+                                    </td>
+
+                                </tr>
+
+                            {% else %}
+
+                                <tr>
+
+                                    <td colspan="5">
+                                        No pending returns.
+                                    </td>
+
+                                </tr>
+
+                            {% endfor %}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+
+                {% if pending_returns %}
+
+                    <div class="actions">
+
+                        <button
+                            class="button-success"
+                            type="submit"
+                            name="action"
+                            value="approve"
+                        >
+                            Approve Return
+                        </button>
+
+
+                        <button
+                            class="button-danger"
+                            type="submit"
+                            name="action"
+                            value="reject"
+                        >
+                            Reject Return
+                        </button>
+
+                    </div>
+
+                {% endif %}
+
+            </form>
+
+        </section>
+
+
+        <!-- ======================================================
+             ADMIN PASSWORD RESET APPROVAL
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Password Reset Requests — Admin Approval Panel</h2>
+
+            <form
+                method="POST"
+                action="{{ url_for('admin_reset_action') }}"
+            >
+
+                <div class="table-wrapper">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+                                <th>Select</th>
+                                <th>User</th>
+                                <th>Email</th>
+                                <th>Requested</th>
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            {% for reset in pending_resets %}
+
+                                <tr>
+
+                                    <td>
+
+                                        <input
+                                            type="checkbox"
+                                            name="request_ids"
+                                            value="{{ reset[0] }}"
+                                        >
+
+                                    </td>
+
+                                    <td>
+                                        {{ reset[1] }}
+                                    </td>
+
+                                    <td>
+                                        {{ reset[2] }}
+                                    </td>
+
+                                    <td>
+                                        {{ reset[3] }}
+                                    </td>
+
+                                </tr>
+
+                            {% else %}
+
+                                <tr>
+
+                                    <td colspan="4">
+                                        No pending password-reset requests.
+                                    </td>
+
+                                </tr>
+
+                            {% endfor %}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+
+                {% if pending_resets %}
+
+                    <div class="actions">
+
+                        <button
+                            class="button-success"
+                            type="submit"
+                            name="action"
+                            value="approve"
+                        >
+                            Approve Reset
+                        </button>
+
+
+                        <button
+                            class="button-danger"
+                            type="submit"
+                            name="action"
+                            value="reject"
+                        >
+                            Reject Reset
+                        </button>
+
+                    </div>
+
+                {% endif %}
+
+            </form>
+
+        </section>
+
+
+        <!-- ======================================================
+             ADMIN BORROW AUDIT
+        ======================================================= -->
+
+        <section class="card">
+
+            <h2>Borrow Audit</h2>
+
+            <div class="table-wrapper">
+
+                <table>
+
+                    <thead>
+
+                        <tr>
+                            <th>Request</th>
+                            <th>User</th>
+                            <th>ID Number</th>
+                            <th>Equipment</th>
+                            <th>Quantity</th>
+                            <th>Status</th>
+                            <th>Reviewed By</th>
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        {% for loan in all_loans %}
+
+                            <tr>
+
+                                <td>
+                                    #{{ loan[0] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[1] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[2] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[4] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[5] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[9] }}
+                                </td>
+
+                                <td>
+                                    {{ loan[11] }}
+                                </td>
+
+                            </tr>
+
+                        {% else %}
+
+                            <tr>
+
+                                <td colspan="7">
+                                    No borrowing records found.
+                                </td>
+
+                            </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+    {% endif %}
+
+
+    <!-- ======================================================
+         PASSWORD CHANGE FOR BOTH ROLES
+    ======================================================= -->
+
+    <section class="card">
+
+        <h2>Change Password</h2>
+
+        <form
+            method="POST"
+            action="{{ url_for('change_password') }}"
+        >
+
+            <div class="form-grid">
+
+                <div>
+
+                    <label for="current_password">
+                        Current Password
+                    </label>
+
+                    <input
+                        type="password"
+                        id="current_password"
+                        name="current_password"
+                        required
+                    >
+
+                </div>
+
+
+                <div>
+
+                    <label for="new_password">
+                        New Password
+                    </label>
+
+                    <input
+                        type="password"
+                        id="new_password"
+                        name="new_password"
+                        minlength="8"
+                        required
+                    >
+
+                </div>
+
+
+                <div>
+
+                    <label for="confirm_password">
+                        Confirm New Password
+                    </label>
+
+                    <input
+                        type="password"
+                        id="confirm_password"
+                        name="confirm_password"
+                        minlength="8"
+                        required
+                    >
+
+                </div>
+
+            </div>
+
+
+            <div class="form-actions">
+
+                <button type="submit">
+                    Change Password
+                </button>
+
+            </div>
+
+        </form>
+
+    </section>
+
+</div>
+
+
+<script>
+
+    /* ==========================================================
+       USER BORROW QUANTITY LIMIT
+    ========================================================== */
+
+    const equipmentSelect =
+        document.getElementById("item_id");
+
+    const quantityInput =
+        document.getElementById("quantity");
+
+
+    if (equipmentSelect && quantityInput) {
+
+        const updateMaximum = () => {
+
+            const selectedOption =
+                equipmentSelect.options[
+                    equipmentSelect.selectedIndex
+                ];
+
+            const available =
+                selectedOption.getAttribute("data-stock");
+
+
+            if (available !== null) {
+
+                quantityInput.max = available;
+
+                quantityInput.value = Math.min(
+                    Number(quantityInput.value) || 1,
+                    Number(available)
+                );
+
+            }
+
+        };
+
+
+        equipmentSelect.addEventListener(
+            "change",
+            updateMaximum
+        );
+
+    }
+
+
+    /* ==========================================================
+       DELETE HARDWARE CONFIRMATION
+    ========================================================== */
+
+    function confirmDeleteHardware() {
+
+        const selectedItems =
+            document.querySelectorAll(
+                'input[name="item_ids"]:checked'
+            );
+
+
+        if (selectedItems.length === 0) {
+
+            alert(
+                "Please select at least one hardware item to delete."
+            );
+
+            return false;
+
+        }
+
+
+        return confirm(
+            "Are you sure you want to delete the selected hardware item(s)? This action cannot be undone."
+        );
+
+    }
+
+</script>
+
+{% endblock %}

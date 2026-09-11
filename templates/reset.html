@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Reset Password{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <section class="card">
+        <h2>Reset or Unlock Password</h2>
+
+        <p class="muted">
+            This request must be reviewed by an administrator.
+        </p>
+
+        <form method="POST"
+              action="{{ url_for('reset_request') }}">
+
+            <div class="form-group">
+                <label for="email">Registered Email</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="new_password">Requested New Password</label>
+                <input
+                    type="password"
+                    id="new_password"
+                    name="new_password"
+                    minlength="8"
+                    required
+                >
+
+                <label class="show-password">
+                    <input
+                        type="checkbox"
+                        onclick="togglePassword('password')"
+                    >
+                    Show Password
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label for="confirm_password">
+                    Confirm New Password
+                </label>
+
+                <input
+                    type="password"
+                    id="confirm_password"
+                    name="confirm_password"
+                    minlength="8"
+                    required
+                >
+
+                <label class="show-password">
+                    <input
+                        type="checkbox"
+                        onclick="togglePassword('password')"
+                    >
+                    Show Password
+                </label>
+            </div>
+
+            <div class="actions">
+                <button type="submit">Submit Request</button>
+
+                <a class="button button-secondary"
+                   href="{{ url_for('login') }}">
+                    Back to Login
+                </a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

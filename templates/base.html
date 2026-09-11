@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{% block title %}Laboratory System{% endblock %}</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+    <style>
+        :root {
+            --primary: #173b67;
+            --secondary: #245c97;
+            --accent: #f1b434;
+            --success: #238636;
+            --danger: #c62828;
+            --warning: #9a6700;
+            --light: #f4f7fb;
+            --border: #d8e0ea;
+            --text: #17202a;
+            --muted: #607080;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--light);
+            color: var(--text);
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            padding: 16px 5%;
+            background: var(--primary);
+            color: white;
+        }
+
+        nav h1 {
+            margin: 0;
+            font-size: 21px;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .container {
+            width: min(1200px, 92%);
+            margin: 28px auto;
+        }
+
+        .auth-container {
+            width: min(460px, 92%);
+            margin: 45px auto;
+        }
+
+        .panel,
+        .card {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.06);
+        }
+
+        .panel {
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .panel h2,
+        .panel h3 {
+            margin-top: 0;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            padding: 20px;
+        }
+
+        .card-label {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .card-value {
+            margin-top: 8px;
+            color: var(--primary);
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        input,
+        select,
+        textarea,
+        button {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #b7c2ce;
+            border-radius: 6px;
+            font: inherit;
+        }
+
+        textarea {
+            min-height: 85px;
+            resize: vertical;
+        }
+
+        button,
+        .button {
+            display: inline-block;
+            width: auto;
+            padding: 10px 17px;
+            border: none;
+            border-radius: 6px;
+            background: var(--secondary);
+            color: white;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        button:hover,
+        .button:hover {
+            opacity: 0.9;
+        }
+
+        .button-danger {
+            background: var(--danger);
+        }
+
+        .button-success {
+            background: var(--success);
+        }
+
+        .button-warning {
+            background: var(--warning);
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        th,
+        td {
+            padding: 11px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: #e8eff7;
+            color: var(--primary);
+            white-space: nowrap;
+        }
+
+        .flash {
+            margin-bottom: 15px;
+            padding: 12px 15px;
+            border-radius: 6px;
+        }
+
+        .flash-success {
+            background: #daf3df;
+            color: #155724;
+        }
+
+        .flash-danger {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .flash-warning {
+            background: #fff3cd;
+            color: #664d03;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 9px;
+            border-radius: 12px;
+            background: #e8eff7;
+            font-size: 13px;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        footer {
+            padding: 24px;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        @media (max-width: 700px) {
+            nav {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .full-width {
+                grid-column: auto;
+            }
+
+            .container {
+                width: 95%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <h1>Engineering Laboratory Asset Tracking System</h1>
+
+        <div class="nav-links">
+            {% if session.get("username") %}
+                <span>
+                    {{ session.get("username") }}
+                    ({{ session.get("role") }})
+                </span>
+
+                <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                <a href="{{ url_for('logout') }}">Logout</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <main class="{% block container_class %}container{% endblock %}">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        Engineering Laboratory Asset Tracking System
+    </footer>
+
+    <script>
+        function togglePassword(id) {
+            const passwordInput = document.getElementById(id);
+
+            if (passwordInput.type === "password") {
+                passwordInput.type = "text";
+            } else {
+                passwordInput.type = "password";
+            }
+        }
+    </script>
+</body>
+</html>

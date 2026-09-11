@@ -1,0 +1,16 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# SQLite database
+hardware_inventory.db
+
+# Application logs
+app_logging/
+*.log
+
+# Environment variables
+.env

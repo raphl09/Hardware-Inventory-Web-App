@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Register{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <section class="card">
+        <h2>Create Account</h2>
+
+        <form method="POST" action="{{ url_for('register') }}">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    minlength="3"
+                    maxlength="20"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    minlength="8"
+                    required
+                >
+
+                <label class="show-password">
+                    <input
+                        type="checkbox"
+                        onclick="togglePassword('password')"
+                    >
+                    Show Password
+                </label>
+
+                <small class="muted">
+                    Use at least eight characters, one uppercase letter,
+                    one number and one special character.
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label for="role">Account Role</label>
+                <select id="role" name="role" required>
+                    <option value="USER">USER</option>
+                    <option value="ADMIN">ADMIN</option>
+                </select>
+            </div>
+
+            <div class="actions">
+                <button type="submit">Register</button>
+
+                <a class="button button-secondary"
+                   href="{{ url_for('login') }}">
+                    Back to Login
+                </a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}
