@@ -2,3 +2,4 @@ Flask
 bcrypt
 pydantic
 gunicorn
+python-dotenv

@@ -3,6 +3,10 @@
 # Flask Web Application
 # ==========================================================
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from functools import wraps
 import os
 
@@ -31,6 +35,7 @@ from engineering_laboratory import (
 # ==========================================================
 # CREATE FLASK APPLICATION
 # ==========================================================
+
 
 app = Flask(__name__)
 
