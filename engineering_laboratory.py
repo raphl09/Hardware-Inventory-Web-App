@@ -5,10 +5,18 @@ import logging
 import os
 import re
 import sqlite3
-import tkinter as tk
+#import tkinter as tk
+# DESKTOP ONLY — Tkinter is unavailable on headless servers such as Render.
+try:
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+except ImportError:
+    tk = None
+    messagebox = None
+    ttk = None
 from datetime import datetime
 from pathlib import Path
-from tkinter import messagebox, ttk
+#from tkinter import messagebox, ttk
 
 import bcrypt
 from dotenv import load_dotenv
@@ -4910,5 +4918,13 @@ class Application:
 
 
 # main.py
+#if __name__ == "__main__":
+    #Application()
+
 if __name__ == "__main__":
+    if tk is None:
+        raise RuntimeError(
+            "Tkinter is unavailable. Run app.py for the Flask web version."
+        )
+
     Application()
