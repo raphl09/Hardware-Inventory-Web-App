@@ -3,3 +3,4 @@ bcrypt
 pydantic
 gunicorn
 python-dotenv
+psycopg[binary]

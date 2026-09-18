@@ -2,6 +2,7 @@
 
 import csv
 import logging
+import os
 import re
 import sqlite3
 import tkinter as tk
@@ -10,7 +11,10 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 import bcrypt
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError, field_validator
+
+from database_compat import connect_postgresql
 
 
 # logger.py
@@ -21,6 +25,9 @@ LOG_DIR = BASE_DIR / "app_logging"
 LOG_PATH = LOG_DIR / "app.log"
 CSV_PATH = BASE_DIR / "inventory_report.csv"
 LOG_DIR.mkdir(exist_ok=True)
+
+load_dotenv(BASE_DIR / ".env")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 logging.basicConfig(
     filename=LOG_PATH,
@@ -35,6 +42,9 @@ logger = logging.getLogger("HardwareInventoryApp")
 # database.py
 
 def get_connection():
+    if DATABASE_URL:
+        return connect_postgresql(DATABASE_URL)
+
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -42,6 +52,21 @@ def get_connection():
 
 def init_db():
     """Create the users and hardware tables if they do not exist."""
+
+    # The PostgreSQL schema was created by migrate_to_postgres.py.
+    # Confirm that Supabase is reachable without running SQLite-only DDL.
+    if DATABASE_URL:
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            conn.close()
+            logger.info("PostgreSQL database connection verified.")
+            return
+        except sqlite3.Error as e:
+            logger.error(f"PostgreSQL initialization check failed: {e}")
+            raise
 
     try:
         conn = get_connection()
@@ -181,30 +206,9 @@ def init_db():
                 "ADD COLUMN group_members TEXT NOT NULL DEFAULT 'None'"
             )
 
-        # Equipment Maintenance Schedule Table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS maintenance_schedules (
-                maintenance_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                item_id INTEGER NOT NULL,
-                maintenance_type TEXT NOT NULL,
-                start_time TEXT NOT NULL,
-                end_time TEXT NOT NULL,
-                notes TEXT,
-                status TEXT NOT NULL DEFAULT 'Scheduled',
-                created_by TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (item_id) REFERENCES hardware(item_id)
-            )
-        """)
-
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_requests_schedule
             ON equipment_requests(item_id, start_time, end_time, status)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_maintenance_schedule
-            ON maintenance_schedules(item_id, start_time, end_time, status)
         """)
 
         conn.commit()
@@ -384,15 +388,6 @@ class EquipmentRequestSchema(BaseModel):
 
         cleaned_value = value.strip()
         return cleaned_value if cleaned_value else "None"
-
-
-class MaintenanceScheduleSchema(BaseModel):
-
-    item_id: int = Field(..., gt=0)
-    maintenance_type: str = Field(..., min_length=3, max_length=50)
-    start_time: str
-    end_time: str
-    notes: str = Field(default="", max_length=250)
 
 
 # Auth_controller.py
@@ -1453,7 +1448,7 @@ class HardwareController:
             return False, "Failed to export inventory report."
 
 
-# EQUIPMENT REQUEST, RESERVATION, AND MAINTENANCE CONTROLLER
+# EQUIPMENT REQUEST AND RESERVATION CONTROLLER
 class AssetTrackingController:
 
     DATE_TIME_FORMAT = "%Y-%m-%d %H:%M"
@@ -1546,28 +1541,6 @@ class AssetTrackingController:
 
             item_name = hardware[0]
             total_quantity = hardware[1]
-
-            cursor.execute(
-                """
-                SELECT maintenance_type
-                FROM maintenance_schedules
-                WHERE item_id = ?
-                  AND status = 'Scheduled'
-                  AND start_time < ?
-                  AND end_time > ?
-                LIMIT 1
-                """,
-                (item_id, end_time, start_time)
-            )
-
-            maintenance = cursor.fetchone()
-
-            if maintenance:
-                conn.close()
-                return False, (
-                    f"{item_name} is unavailable because of scheduled "
-                    f"{maintenance[0].lower()}."
-                ), 0, total_quantity
 
             query = """
                 SELECT COALESCE(SUM(quantity), 0)
@@ -2097,221 +2070,6 @@ class AssetTrackingController:
         except sqlite3.Error as e:
             logger.error(f"Equipment request cancellation failed: {e}")
             return False, "Unable to cancel the equipment request."
-
-    def add_maintenance(
-        self,
-        admin_username,
-        item_id,
-        maintenance_type,
-        start_time,
-        end_time,
-        notes=""
-    ):
-
-        try:
-            validated = MaintenanceScheduleSchema(
-                item_id=item_id,
-                maintenance_type=maintenance_type,
-                start_time=start_time,
-                end_time=end_time,
-                notes=notes
-            )
-
-        except ValidationError as e:
-            return False, f"Validation Error: {e.errors()[0]['msg']}"
-
-        valid_time, message = self.validate_time_range(
-            validated.start_time,
-            validated.end_time
-        )
-
-        if not valid_time:
-            return False, message
-
-        try:
-            conn = get_connection()
-            cursor = conn.cursor()
-            admin = self._get_user(cursor, admin_username)
-
-            if not admin or admin[1] != "ADMIN":
-                conn.close()
-                return False, "Only an ADMIN may schedule maintenance."
-
-            cursor.execute(
-                """
-                SELECT request_id
-                FROM equipment_requests
-                WHERE item_id = ?
-                  AND status = 'Approved'
-                  AND start_time < ?
-                  AND end_time > ?
-                LIMIT 1
-                """,
-                (validated.item_id, validated.end_time, validated.start_time)
-            )
-
-            if cursor.fetchone():
-                conn.close()
-                return False, (
-                    "Maintenance conflicts with an approved reservation. "
-                    "Reschedule or cancel that reservation first."
-                )
-
-            cursor.execute(
-                """
-                SELECT maintenance_id
-                FROM maintenance_schedules
-                WHERE item_id = ?
-                  AND status = 'Scheduled'
-                  AND start_time < ?
-                  AND end_time > ?
-                LIMIT 1
-                """,
-                (validated.item_id, validated.end_time, validated.start_time)
-            )
-
-            if cursor.fetchone():
-                conn.close()
-                return False, "This equipment already has overlapping maintenance."
-
-            cursor.execute(
-                """
-                INSERT INTO maintenance_schedules
-                (
-                    item_id,
-                    maintenance_type,
-                    start_time,
-                    end_time,
-                    notes,
-                    created_by
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    validated.item_id,
-                    validated.maintenance_type,
-                    validated.start_time,
-                    validated.end_time,
-                    validated.notes.strip(),
-                    admin_username
-                )
-            )
-
-            maintenance_id = cursor.lastrowid
-            conn.commit()
-            conn.close()
-
-            logger.info(
-                f"Maintenance {maintenance_id} scheduled by '{admin_username}'."
-            )
-
-            return True, f"Maintenance schedule #{maintenance_id} was added."
-
-        except sqlite3.Error as e:
-            logger.error(f"Maintenance scheduling failed: {e}")
-            return False, "Unable to schedule equipment maintenance."
-
-    def fetch_maintenance(self, status_filter="All Statuses"):
-
-        try:
-            conn = get_connection()
-            cursor = conn.cursor()
-
-            query = """
-                SELECT
-                    maintenance.maintenance_id,
-                    hardware.item_name,
-                    maintenance.maintenance_type,
-                    maintenance.start_time,
-                    maintenance.end_time,
-                    COALESCE(maintenance.notes, '-'),
-                    maintenance.status,
-                    maintenance.created_by
-                FROM maintenance_schedules AS maintenance
-                INNER JOIN hardware ON maintenance.item_id = hardware.item_id
-                WHERE 1 = 1
-            """
-
-            parameters = []
-
-            if status_filter in ["Scheduled", "Completed", "Cancelled"]:
-                query += " AND maintenance.status = ?"
-                parameters.append(status_filter)
-
-            query += " ORDER BY maintenance.start_time DESC"
-            cursor.execute(query, parameters)
-            rows = cursor.fetchall()
-            conn.close()
-
-            return rows
-
-        except sqlite3.Error as e:
-            logger.error(f"Failed to fetch maintenance schedules: {e}")
-            return []
-
-    def change_maintenance_status(
-        self,
-        maintenance_id,
-        admin_username,
-        new_status
-    ):
-
-        if new_status not in ["Completed", "Cancelled"]:
-            return False, "Invalid maintenance status."
-
-        try:
-            conn = get_connection()
-            cursor = conn.cursor()
-            admin = self._get_user(cursor, admin_username)
-
-            if not admin or admin[1] != "ADMIN":
-                conn.close()
-                return False, "Only an ADMIN may manage maintenance."
-
-            cursor.execute(
-                """
-                SELECT status
-                FROM maintenance_schedules
-                WHERE maintenance_id = ?
-                """,
-                (maintenance_id,)
-            )
-
-            maintenance = cursor.fetchone()
-
-            if not maintenance:
-                conn.close()
-                return False, "The maintenance schedule was not found."
-
-            if maintenance[0] != "Scheduled":
-                conn.close()
-                return False, "Only scheduled maintenance may be changed."
-
-            cursor.execute(
-                """
-                UPDATE maintenance_schedules
-                SET status = ?
-                WHERE maintenance_id = ?
-                """,
-                (new_status, maintenance_id)
-            )
-
-            conn.commit()
-            conn.close()
-
-            logger.info(
-                f"Maintenance {maintenance_id} marked {new_status.lower()} "
-                f"by '{admin_username}'."
-            )
-
-            return True, (
-                f"Maintenance schedule #{maintenance_id} was "
-                f"marked {new_status.lower()}."
-            )
-
-        except sqlite3.Error as e:
-            logger.error(f"Maintenance status update failed: {e}")
-            return False, "Unable to update the maintenance schedule."
 
 # ============================================================
 # DESKTOP ONLY — retained for the original desktop version
@@ -3224,7 +2982,6 @@ class InventoryWindow:
         self.dashboard_tab = ttk.Frame(self.main_notebook)
         self.catalog_tab = ttk.Frame(self.main_notebook)
         self.requests_tab = ttk.Frame(self.main_notebook)
-        self.maintenance_tab = ttk.Frame(self.main_notebook)
         self.profile_tab = ttk.Frame(self.main_notebook)
 
         self.main_notebook.add(
@@ -3247,11 +3004,6 @@ class InventoryWindow:
         )
 
         self.main_notebook.add(
-            self.maintenance_tab,
-            text="Maintenance Schedule"
-        )
-
-        self.main_notebook.add(
             self.profile_tab,
             text="My Profile & Security"
         )
@@ -3267,7 +3019,7 @@ class InventoryWindow:
             self.dashboard_tab,
             text=(
                 "Track laboratory equipment, requests, approved reservations,\n"
-                "borrowing details, and equipment maintenance in one system."
+                "and borrowing details in one system."
             ),
             font=("Arial", 11),
             justify="center"
@@ -3284,19 +3036,6 @@ class InventoryWindow:
             bg="#FF9800",
             fg="white",
             command=self.open_requests
-        ).pack(pady=5)
-
-        tk.Button(
-            self.dashboard_tab,
-            text=(
-                "Manage Maintenance Schedule"
-                if self.role == "ADMIN"
-                else "View Maintenance Schedule"
-            ),
-            width=28,
-            bg="#607D8B",
-            fg="white",
-            command=self.open_maintenance
         ).pack(pady=5)
 
         tk.Button(
@@ -3328,7 +3067,6 @@ class InventoryWindow:
             ).pack(pady=5)
 
         self.build_requests_tab()
-        self.build_maintenance_tab()
         self.build_profile_security()
 
         # TOTAL VALUE BANNER
@@ -3821,8 +3559,7 @@ class InventoryWindow:
             self.equipment_option_map[label] = item_id
 
         combo_names = [
-            "request_equipment_combo",
-            "maintenance_equipment_combo"
+            "request_equipment_combo"
         ]
 
         for combo_name in combo_names:
@@ -4217,234 +3954,12 @@ class InventoryWindow:
         self.refresh_equipment_options()
         self.load_equipment_requests()
 
-    # BUILD MAINTENANCE SCHEDULE TAB
-    def build_maintenance_tab(self):
-
-        tk.Label(
-            self.maintenance_tab,
-            text="Equipment Maintenance Schedule",
-            font=("Arial", 18, "bold")
-        ).pack(pady=(12, 5))
-
-        tk.Label(
-            self.maintenance_tab,
-            text=(
-                "Schedule and manage inspections, repairs, and calibrations."
-                if self.role == "ADMIN"
-                else "Equipment listed as Scheduled is unavailable during that period."
-            )
-        ).pack(pady=(0, 8))
-
-        if self.role == "ADMIN":
-            form = tk.LabelFrame(
-                self.maintenance_tab,
-                text="Add Maintenance Schedule",
-                padx=10,
-                pady=8
-            )
-            form.pack(fill="x", padx=10, pady=5)
-
-            tk.Label(form, text="Equipment:").grid(
-                row=0, column=0, padx=4, pady=4, sticky="e"
-            )
-
-            self.maintenance_equipment_combo = ttk.Combobox(
-                form,
-                state="readonly",
-                width=42
-            )
-            self.maintenance_equipment_combo.grid(
-                row=0, column=1, columnspan=3, padx=4, pady=4, sticky="w"
-            )
-
-            tk.Label(form, text="Type:").grid(
-                row=0, column=4, padx=4, pady=4, sticky="e"
-            )
-
-            self.maintenance_type_combo = ttk.Combobox(
-                form,
-                values=["Inspection", "Repair", "Calibration"],
-                state="readonly",
-                width=16
-            )
-            self.maintenance_type_combo.grid(
-                row=0, column=5, padx=4, pady=4
-            )
-            self.maintenance_type_combo.set("Inspection")
-
-            tk.Label(form, text="Date:").grid(
-                row=1, column=0, padx=4, pady=4, sticky="e"
-            )
-
-            self.maintenance_date_entry = tk.Entry(form, width=14)
-            self.maintenance_date_entry.grid(
-                row=1, column=1, padx=4, pady=4, sticky="w"
-            )
-            self.maintenance_date_entry.insert(
-                0,
-                datetime.now().strftime("%Y-%m-%d")
-            )
-
-            tk.Label(form, text="Start:").grid(
-                row=1, column=2, padx=4, pady=4, sticky="e"
-            )
-
-            self.maintenance_start_combo = ttk.Combobox(
-                form,
-                values=self.get_time_options(),
-                state="readonly",
-                width=8
-            )
-            self.maintenance_start_combo.grid(
-                row=1, column=3, padx=4, pady=4
-            )
-            self.maintenance_start_combo.set("08:00")
-
-            tk.Label(form, text="End:").grid(
-                row=1, column=4, padx=4, pady=4, sticky="e"
-            )
-
-            self.maintenance_end_combo = ttk.Combobox(
-                form,
-                values=self.get_time_options(),
-                state="readonly",
-                width=8
-            )
-            self.maintenance_end_combo.grid(
-                row=1, column=5, padx=4, pady=4
-            )
-            self.maintenance_end_combo.set("09:00")
-
-            tk.Label(form, text="Notes:").grid(
-                row=2, column=0, padx=4, pady=4, sticky="e"
-            )
-
-            self.maintenance_notes_entry = tk.Entry(form, width=70)
-            self.maintenance_notes_entry.grid(
-                row=2, column=1, columnspan=5, padx=4, pady=4, sticky="ew"
-            )
-
-            tk.Button(
-                form,
-                text="Schedule Maintenance",
-                bg="#607D8B",
-                fg="white",
-                width=22,
-                command=self.schedule_maintenance
-            ).grid(row=3, column=0, columnspan=6, pady=5)
-
-        controls = tk.Frame(self.maintenance_tab)
-        controls.pack(fill="x", padx=10, pady=5)
-
-        tk.Label(controls, text="Status:").pack(side="left")
-        self.maintenance_status_var = tk.StringVar(value="All Statuses")
-
-        self.maintenance_status_combo = ttk.Combobox(
-            controls,
-            textvariable=self.maintenance_status_var,
-            values=[
-                "All Statuses",
-                "Scheduled",
-                "Completed",
-                "Cancelled"
-            ],
-            state="readonly",
-            width=16
-        )
-        self.maintenance_status_combo.pack(side="left", padx=5)
-        self.maintenance_status_combo.bind(
-            "<<ComboboxSelected>>",
-            lambda event: self.load_maintenance_schedules()
-        )
-
-        if self.role == "ADMIN":
-            tk.Button(
-                controls,
-                text="Mark Completed",
-                bg="#4CAF50",
-                fg="white",
-                width=16,
-                command=lambda: self.update_maintenance_status("Completed")
-            ).pack(side="left", padx=5)
-
-            tk.Button(
-                controls,
-                text="Cancel Maintenance",
-                bg="#F44336",
-                fg="white",
-                width=17,
-                command=lambda: self.update_maintenance_status("Cancelled")
-            ).pack(side="left", padx=5)
-
-        tk.Button(
-            controls,
-            text="Refresh",
-            width=12,
-            command=self.load_maintenance_schedules
-        ).pack(side="right", padx=5)
-
-        maintenance_frame = tk.Frame(self.maintenance_tab)
-        maintenance_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        scroll = ttk.Scrollbar(maintenance_frame, orient="vertical")
-        scroll.pack(side="right", fill="y")
-
-        columns = (
-            "Maintenance ID",
-            "Equipment",
-            "Type",
-            "Start",
-            "End",
-            "Notes",
-            "Status",
-            "Created By"
-        )
-
-        self.maintenance_tree = ttk.Treeview(
-            maintenance_frame,
-            columns=columns,
-            show="headings",
-            yscrollcommand=scroll.set
-        )
-        scroll.config(command=self.maintenance_tree.yview)
-
-        widths = [95, 170, 110, 140, 140, 260, 100, 110]
-
-        for column, width in zip(columns, widths):
-            self.maintenance_tree.heading(column, text=column)
-            self.maintenance_tree.column(column, width=width, anchor="center")
-
-        self.maintenance_tree.column("Notes", anchor="w")
-        self.maintenance_tree.tag_configure(
-            "scheduled",
-            background="#fff2cc"
-        )
-        self.maintenance_tree.tag_configure(
-            "completed",
-            background="#ccffcc"
-        )
-        self.maintenance_tree.tag_configure(
-            "cancelled",
-            background="#e0e0e0"
-        )
-        self.maintenance_tree.pack(fill="both", expand=True)
-
-        self.refresh_equipment_options()
-        self.load_maintenance_schedules()
-
     # OPEN REQUESTS TAB
     def open_requests(self):
 
         self.refresh_equipment_options()
         self.load_equipment_requests()
         self.main_notebook.select(self.requests_tab)
-
-    # OPEN MAINTENANCE TAB
-    def open_maintenance(self):
-
-        self.refresh_equipment_options()
-        self.load_maintenance_schedules()
-        self.main_notebook.select(self.maintenance_tab)
 
     # LOAD EQUIPMENT REQUESTS
     def load_equipment_requests(self):
@@ -4751,91 +4266,6 @@ class InventoryWindow:
 
         else:
             messagebox.showerror("Equipment Request", message)
-
-    # ADMIN ADD MAINTENANCE SCHEDULE
-    def schedule_maintenance(self):
-
-        item_id = self.get_equipment_id(
-            self.maintenance_equipment_combo
-        )
-
-        if item_id is None:
-            messagebox.showwarning(
-                "Maintenance Schedule",
-                "Select laboratory equipment first."
-            )
-            return
-
-        success, message = self.asset_controller.add_maintenance(
-            self.username,
-            item_id,
-            self.maintenance_type_combo.get(),
-            self.combine_date_time(
-                self.maintenance_date_entry.get(),
-                self.maintenance_start_combo.get()
-            ),
-            self.combine_date_time(
-                self.maintenance_date_entry.get(),
-                self.maintenance_end_combo.get()
-            ),
-            self.maintenance_notes_entry.get().strip()
-        )
-
-        if success:
-            messagebox.showinfo("Maintenance Schedule", message)
-            self.maintenance_notes_entry.delete(0, tk.END)
-            self.load_maintenance_schedules()
-
-        else:
-            messagebox.showerror("Maintenance Schedule", message)
-
-    # LOAD MAINTENANCE SCHEDULES
-    def load_maintenance_schedules(self):
-
-        for item in self.maintenance_tree.get_children():
-            self.maintenance_tree.delete(item)
-
-        rows = self.asset_controller.fetch_maintenance(
-            self.maintenance_status_var.get()
-        )
-
-        for row in rows:
-            self.maintenance_tree.insert(
-                "",
-                tk.END,
-                values=row,
-                tags=(row[6].lower(),)
-            )
-
-    # ADMIN COMPLETE OR CANCEL MAINTENANCE
-    def update_maintenance_status(self, new_status):
-
-        selected = self.maintenance_tree.selection()
-
-        if not selected:
-            messagebox.showwarning(
-                "Maintenance Schedule",
-                "Select a scheduled maintenance record first."
-            )
-            return
-
-        maintenance_id = self.maintenance_tree.item(
-            selected[0],
-            "values"
-        )[0]
-
-        success, message = self.asset_controller.change_maintenance_status(
-            maintenance_id,
-            self.username,
-            new_status
-        )
-
-        if success:
-            messagebox.showinfo("Maintenance Schedule", message)
-            self.load_maintenance_schedules()
-
-        else:
-            messagebox.showerror("Maintenance Schedule", message)
 
     # BUILD MY PROFILE & SECURITY TAB
     def build_profile_security(self):
