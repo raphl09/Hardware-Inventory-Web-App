@@ -11,6 +11,7 @@ from functools import wraps
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 import hmac
+import logging
 import os
 import secrets
 import smtplib
@@ -51,6 +52,13 @@ from pydantic import ValidationError
 
 
 app = Flask(__name__)
+
+# The desktop module writes the root logger to app_logging/app.log. Add a
+# stderr handler so SMTP failures are visible in Render's runtime logs too.
+render_log_handler = logging.StreamHandler()
+render_log_handler.setLevel(logging.ERROR)
+render_log_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+app.logger.addHandler(render_log_handler)
 
 app.secret_key = os.environ.get(
     "SECRET_KEY",
@@ -96,7 +104,7 @@ def send_otp_email(receiver_email, otp, intent):
             server.send_message(message)
         return True
     except (OSError, smtplib.SMTPException):
-        app.logger.exception("Could not send OTP email.")
+        app.logger.exception("Could not send %s OTP email.", intent)
         return False
 
 
