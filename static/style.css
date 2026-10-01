@@ -110,3 +110,62 @@
 .form-actions {
     margin-top: 18px;
 }
+
+/* Email verification forms */
+.auth-page {
+    width: min(460px, 100%);
+    margin: 45px auto;
+}
+
+.auth-card {
+    padding: 24px;
+    background: white;
+    border: 1px solid #d8e0ea;
+    border-radius: 10px;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.06);
+}
+
+.card-heading {
+    margin-bottom: 22px;
+}
+
+.card-heading h2 {
+    margin: 4px 0 10px;
+}
+
+.eyebrow {
+    margin: 0;
+    color: #245c97;
+    font-size: 0.75rem;
+    font-weight: bold;
+    letter-spacing: 0.12em;
+}
+
+.auth-form .input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding-left: 12px;
+    border: 1px solid #b7c2ce;
+    border-radius: 6px;
+}
+
+.auth-form .input-wrap input {
+    min-width: 0;
+    border: 0;
+    outline-offset: -2px;
+}
+
+button.primary {
+    background: #245c97;
+    color: white;
+    font-weight: bold;
+}
+
+button.primary.wide {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}

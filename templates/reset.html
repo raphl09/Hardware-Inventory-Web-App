@@ -37,7 +37,7 @@
                 <label class="show-password">
                     <input
                         type="checkbox"
-                        onclick="togglePassword('password')"
+                        onclick="togglePassword('new_password')"
                     >
                     Show Password
                 </label>
@@ -59,14 +59,14 @@
                 <label class="show-password">
                     <input
                         type="checkbox"
-                        onclick="togglePassword('password')"
+                        onclick="togglePassword('confirm_password')"
                     >
                     Show Password
                 </label>
             </div>
 
             <div class="actions">
-                <button type="submit">Submit Request</button>
+                <button class="primary wide" type="submit" style="background-color: #d67a00; border-color: #d67a00; color: white;">Send Verification Code <span>→</span></button>
 
                 <a class="button button-secondary"
                    href="{{ url_for('login') }}">

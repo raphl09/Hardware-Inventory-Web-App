@@ -8,10 +8,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from functools import wraps
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
+import hmac
 import os
+import secrets
+import smtplib
+
+from cryptography.fernet import Fernet, InvalidToken
+from hashlib import sha256
+from base64 import urlsafe_b64encode
 
 from flask import (
     Flask,
+    abort,
     render_template,
     request,
     redirect,
@@ -26,10 +36,13 @@ from engineering_laboratory import (
     init_db,
     get_connection,
     AuthController,
+    UserRegisterSchema,
+    PasswordResetSchema,
     HardwareController,
     AssetTrackingController,
     CSV_PATH
 )
+from pydantic import ValidationError
 
 
 # ==========================================================
@@ -43,6 +56,66 @@ app.secret_key = os.environ.get(
     "SECRET_KEY",
     "lab1-development-secret-change-me"
 )
+
+# Brevo SMTP credentials belong in .env locally and in Render environment
+# variables. SMTP_FROM must be a sender verified in Brevo.
+SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp-relay.brevo.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "2525"))
+SMTP_LOGIN = os.environ.get("SMTP_LOGIN", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("SMTP_FROM", "")
+OTP_LIFETIME = timedelta(minutes=10)
+OTP_MAX_ATTEMPTS = 5
+
+
+def _pending_cipher():
+    """Encrypt pending passwords before Flask places them in its cookie."""
+    key = sha256(app.secret_key.encode("utf-8")).digest()
+    return Fernet(urlsafe_b64encode(key))
+
+
+def send_otp_email(receiver_email, otp, intent):
+    """Send a six-digit verification code through Brevo SMTP."""
+    if not all((SMTP_SERVER, SMTP_LOGIN, SMTP_PASSWORD, SMTP_FROM)):
+        app.logger.error("Brevo SMTP settings are incomplete.")
+        return False
+
+    message = EmailMessage()
+    message["Subject"] = f"Laboratory System - {intent} OTP"
+    message["From"] = SMTP_FROM
+    message["To"] = receiver_email
+    message.set_content(
+        f"Your {intent} one-time password is: {otp}\n\n"
+        "Enter this code within 10 minutes. Do not share it with anyone."
+    )
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15) as server:
+            server.starttls()
+            server.login(SMTP_LOGIN, SMTP_PASSWORD)
+            server.send_message(message)
+        return True
+    except (OSError, smtplib.SMTPException):
+        app.logger.exception("Could not send OTP email.")
+        return False
+
+
+def _otp_digest(code):
+    return hmac.new(
+        app.secret_key.encode("utf-8"), code.encode("utf-8"), sha256
+    ).hexdigest()
+
+
+def _new_pending_data(email, password):
+    otp = str(secrets.randbelow(900_000) + 100_000)
+    data = {
+        "email": email,
+        "password": _pending_cipher().encrypt(password.encode("utf-8")).decode("ascii"),
+        "otp_hash": _otp_digest(otp),
+        "expires_at": (datetime.now(timezone.utc) + OTP_LIFETIME).timestamp(),
+        "attempts": 0,
+    }
+    return otp, data
 
 
 # Create controller objects
@@ -714,22 +787,25 @@ def register():
 
         return redirect(url_for("register"))
 
-    ok, message = auth_controller.register_user(
-        username,
-        email,
-        password,
-        role
-    )
+    try:
+        details = UserRegisterSchema(
+            username=username, email=email, password=password, role=role
+        )
+    except ValidationError as error:
+        flash(f"Validation Error: {error.errors()[0]['msg']}", "danger")
+        return redirect(url_for("register"))
 
-    flash(
-        message,
-        "success" if ok else "danger"
-    )
+    otp, pending = _new_pending_data(details.email, details.password)
+    pending["username"] = details.username
+    pending["role"] = details.role
 
-    if ok:
-        return redirect(url_for("login"))
+    if not send_otp_email(details.email, otp, "Account Registration"):
+        flash("Could not send the verification code. Check SMTP settings and try again.", "danger")
+        return redirect(url_for("register"))
 
-    return redirect(url_for("register"))
+    session["pending_user"] = pending
+    flash("We sent a six-digit code to your email.", "success")
+    return redirect(url_for("verify_otp", action="register"))
 
 
 # ==========================================================
@@ -780,22 +856,79 @@ def reset_request():
 
         return redirect(url_for("reset_request"))
 
-    ok, message = (
-        auth_controller.submit_reset_request(
-            email,
-            new_password
-        )
+    try:
+        details = PasswordResetSchema(email=email, new_password=new_password)
+    except ValidationError as error:
+        flash(f"Validation Error: {error.errors()[0]['msg']}", "danger")
+        return redirect(url_for("reset_request"))
+
+    otp, pending = _new_pending_data(details.email, details.new_password)
+
+    if not send_otp_email(details.email, otp, "Password Reset"):
+        flash("Could not send the verification code. Check SMTP settings and try again.", "danger")
+        return redirect(url_for("reset_request"))
+
+    session["pending_reset"] = pending
+    flash("We sent a six-digit code to your email.", "success")
+    return redirect(url_for("verify_otp", action="reset"))
+
+
+@app.route("/verify-otp/<action>", methods=["GET", "POST"])
+def verify_otp(action):
+    if action not in ("register", "reset"):
+        abort(404)
+
+    session_key = "pending_user" if action == "register" else "pending_reset"
+    pending = session.get(session_key)
+    retry_route = "register" if action == "register" else "reset_request"
+
+    if not pending:
+        flash("Verification session expired. Please start again.", "warning")
+        return redirect(url_for(retry_route))
+
+    if datetime.now(timezone.utc).timestamp() > pending["expires_at"]:
+        session.pop(session_key, None)
+        flash("Verification code expired. Please start again.", "warning")
+        return redirect(url_for(retry_route))
+
+    if request.method == "POST":
+        entered_code = request.form.get("otp_code", "").strip()
+        entered_hash = _otp_digest(entered_code)
+
+        if not hmac.compare_digest(entered_hash, pending["otp_hash"]):
+            pending["attempts"] += 1
+            if pending["attempts"] >= OTP_MAX_ATTEMPTS:
+                session.pop(session_key, None)
+                flash("Too many incorrect codes. Please start again.", "danger")
+                return redirect(url_for(retry_route))
+            session[session_key] = pending
+            flash("Invalid verification code. Please try again.", "danger")
+        else:
+            session.pop(session_key, None)
+            try:
+                password = _pending_cipher().decrypt(
+                    pending["password"].encode("ascii")
+                ).decode("utf-8")
+            except (InvalidToken, UnicodeError):
+                flash("Verification session expired. Please start again.", "warning")
+                return redirect(url_for(retry_route))
+
+            if action == "register":
+                ok, message = auth_controller.register_user(
+                    pending["username"], pending["email"], password, pending["role"]
+                )
+            else:
+                ok, message = auth_controller.submit_reset_request(
+                    pending["email"], password
+                )
+
+            flash(message, "success" if ok else "danger")
+            return redirect(url_for("login" if ok else retry_route))
+
+    return render_template(
+        "otp_verify.html", action=action,
+        action_url=url_for("verify_otp", action=action)
     )
-
-    flash(
-        message,
-        "success" if ok else "danger"
-    )
-
-    if ok:
-        return redirect(url_for("login"))
-
-    return redirect(url_for("reset_request"))
 
 
 # ==========================================================

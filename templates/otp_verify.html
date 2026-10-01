@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Verify Email | Laboratory System{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+  <div class="auth-card" style="margin: 0 auto; max-width: 440px;">
+    <div class="card-heading">
+      <p class="eyebrow">TWO-STEP VERIFICATION</p>
+      <h2>Verify Your Email</h2>
+      <p class="muted">Enter the 6-digit code sent to your email address.</p>
+    </div>
+
+    <form method="post" class="auth-form">
+      <label for="otp_code">Enter 6-Digit Code</label>
+      <div class="input-wrap">
+        <span>🔢</span>
+        <input id="otp_code" name="otp_code" type="text" inputmode="numeric"
+               autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"
+               placeholder="123456" required autofocus
+               style="letter-spacing: 4px; font-size: 1.2rem; font-weight: bold; text-align: center;">
+      </div>
+      <button class="primary wide" type="submit">Verify Code <span>→</span></button>
+    </form>
+
+    <div style="margin-top: 20px; text-align: center;">
+      <a href="{{ url_for('login') }}" style="font-size: 0.9rem; color: #007bff; text-decoration: none; font-weight: bold;">← Back to Login</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
